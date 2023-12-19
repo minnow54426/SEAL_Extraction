@@ -1,6 +1,6 @@
 # About this repository
 
-For theoretical details, please refer to [Extraction Algorithm](https://eprint.iacr.org/2020/015.pdf), most code is borrowed from [Secretflow spu](https://github.com/secretflow/spu/tree/main/libspu/mpc/cheetah/rlwe).
+For theoretical details, please refer to [Extraction Algorithm](https://eprint.iacr.org/2020/015.pdf), most code is borrowed from [Secretflow spu](https://github.com/secretflow/spu/tree/main/libspu/mpc/cheetah/rlwe). A little difference is that, before extraction, the ciphertext will be switched to the last modulus, so the [CRT](https://github.com/microsoft/SEAL/blob/main/native/src/seal/util/rns.cpp) procedure is no longer needed.
 
 
 # Complie and Install SEAL
