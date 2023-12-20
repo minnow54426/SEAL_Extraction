@@ -1,11 +1,6 @@
 #include "PIRExample.h"
 
 
-#define PRIME_60 (1152921504606830593ULL)
-#define PRIME_49 (562949953216513ULL)
-#define COEFF_MOD_ARR {PRIME_60, PRIME_49}
-
-#define PLAIN_MODULUS 1073153
 
 void PIRExample(std::size_t index, std::size_t database_size) {
     // Index indicates the data we want to retrieval from database, begins from 0
@@ -13,9 +8,8 @@ void PIRExample(std::size_t index, std::size_t database_size) {
     seal::EncryptionParameters parms(seal::scheme_type::bfv);
     size_t poly_modulus_degree = 4096;
     parms.set_poly_modulus_degree(poly_modulus_degree);
-    // Set coeff modulus according to fastPIR, see https://github.com/ishtiyaque/FastPIR/blob/master/src/bfvparams.h
-    parms.set_coeff_modulus(COEFF_MOD_ARR);
-    parms.set_plain_modulus(PLAIN_MODULUS);
+    parms.set_coeff_modulus(seal::CoeffModulus::BFVDefault(poly_modulus_degree));
+    parms.set_plain_modulus(seal::PlainModulus::Batching(poly_modulus_degree, 20));
     seal::SEALContext context(parms);
     seal::KeyGenerator keygen(context);
     seal::SecretKey secret_key = keygen.secret_key();
@@ -74,7 +68,7 @@ void PIRExample(std::size_t index, std::size_t database_size) {
     // 3. Generate response, ciphertext(query) times plaintext(database), and then extract
     start_time = std::chrono::high_resolution_clock::now();
     evaluator.multiply_plain_inplace(query, database_pt);
-    // evaluator.mod_switch_to_next_inplace(query);
+    evaluator.mod_switch_to_next_inplace(query);
     LWECT response = LWECT(query, 0, context); // According to database mapping, extraction index is always zero
     end_time = std::chrono::high_resolution_clock::now();
     auto generate_response_time = (std::chrono::duration_cast<std::chrono::microseconds>(end_time - start_time)).count();
