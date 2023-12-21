@@ -68,20 +68,35 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 		
 	// Calculate c0 + c1 * s
     // If modulus switch is applied, only one modulu is left
-    uint64_t result;
+    uint64_t result{0};
+	uint64_t modTemp{0};
 	const uint64_t* op0 = sk_.get_sk().data().data();
 	const uint64_t* op1 = ct.get_ct1().data();
-    result = seal::util::dot_product_mod(op0, op1, num_coeff, modulus);
+
+	seal::Modulus plain_modulus = encryption_parms_.plain_modulus(); // t
+	seal::Modulus last_modulus = encryption_parms_.coeff_modulus()[0]; // Q
+
+	for (std::size_t i = 0; i < num_coeff; i++) {
+		modTemp = seal::util::multiply_uint_mod(*(op0 + i), *(op1 + i), modulus);
+		result = seal::util::add_uint_mod(result, modTemp, modulus);
+	}
+
+	// If fastPIR parameters is used, don't use this line, although it's faster
+	// than above loop
+    // result = seal::util::dot_product_mod(op0, op1, num_coeff, modulus);
+
 	result = seal::util::add_uint_mod(result, ct.get_ct0(), modulus);
 
     // Times t/Q
-    seal::Modulus plain_modulus = encryption_parms_.plain_modulus(); // t
-    seal::Modulus last_modulus = encryption_parms_.coeff_modulus()[0]; // Q
-    // Plus 0.5, round will become floor 
-    result = static_cast<int>(static_cast<double>(result * plain_modulus.value()) / last_modulus.value() + 0.5);
+	uint64_t resultTmp[2]{0, 0};
+	seal::util::multiply_uint64(result, plain_modulus.value(), reinterpret_cast<unsigned long long*>(resultTmp)); // Times t
+	uint64_t decrypt_result[2]{0, 0};
+	uint64_t half_modulus = last_modulus.value() % 2 ? (last_modulus.value() - 1) / 2 : last_modulus.value() / 2; // Round
+	seal::util::add_uint(resultTmp, 2, half_modulus, resultTmp); // After negate, sub becomes add, round
+	seal::util::divide_uint128_inplace(resultTmp, last_modulus.value(), decrypt_result); // Divide Q, ceil function
 
-	return result;
+	return decrypt_result[0];
 
-	// If modulus switch is applied before tranfromation from RLWE ciphertext to LWE ciphertext, 
+	// If modulus switch is applied before tranformation from RLWE ciphertext to LWE ciphertext, 
 	// CRT is no longer needed, for usage, see https://github.com/microsoft/SEAL/blob/main/native/src/seal/util/rns.cpp
 	}
