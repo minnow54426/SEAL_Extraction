@@ -65,6 +65,8 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 
 	std::shared_ptr<const seal::SEALContext::ContextData> context_data = context_.get_context_data(ct.parms_id());
 	const seal::Modulus& modulus = context_data->parms().coeff_modulus()[0];
+
+	std::cout << "point0" << std::endl;
 		
 	// Calculate c0 + c1 * s
     // If modulus switch is applied, only one modulu is left
@@ -73,6 +75,8 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 	const uint64_t* op0 = sk_.get_sk().data().data();
 	const uint64_t* op1 = ct.get_ct1().data();
 
+	std::cout << "point1" << std::endl;
+
 	seal::Modulus plain_modulus = encryption_parms_.plain_modulus(); // t
 	seal::Modulus last_modulus = encryption_parms_.coeff_modulus()[0]; // Q
 
@@ -80,6 +84,8 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 		modTemp = seal::util::multiply_uint_mod(*(op0 + i), *(op1 + i), modulus);
 		result = seal::util::add_uint_mod(result, modTemp, modulus);
 	}
+
+	std::cout << "point2" << std::endl;
 
 	// If fastPIR parameters is used, don't use this line, although it's faster
 	// than above loop
@@ -99,4 +105,52 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 
 	// If modulus switch is applied before tranformation from RLWE ciphertext to LWE ciphertext, 
 	// CRT is no longer needed, for usage, see https://github.com/microsoft/SEAL/blob/main/native/src/seal/util/rns.cpp
+}
+
+std::vector<seal::Plaintext> LWECT::to_pt() {
+	std::vector<seal::Plaintext> result;
+
+	// 1. Slice every 60 bits number into 3 20 bits number
+	// 2. Transform 20 bits number to string
+	// 3. Transfrom string to plaintext
+
+	// Fristly, deal with ct0, whose type is uint64_t
+	uint64_t least, middle, upper{};
+	least = ct0 & 0xfffff;
+	middle = (ct0 >> 20) & 0xfffff;
+	upper = (ct0 >> 40) & 0xfffff;
+	result.push_back(seal::Plaintext(seal::util::uint_to_hex_string(&least, std::size_t(1))));
+	result.push_back(seal::Plaintext(seal::util::uint_to_hex_string(&middle, std::size_t(1))));
+	result.push_back(seal::Plaintext(seal::util::uint_to_hex_string(&upper, std::size_t(1))));
+
+	// Then deal with ct1, whose type is seal::Plaintext
+	for (std::size_t i = 0; i < ct1.coeff_count(); i++) {
+		least = ct1[i] & 0xfffff;
+		middle = (ct1[i] >> 20) & 0xfffff;
+		upper = (ct1[i] >> 40) & 0xfffff;
+		result.push_back(seal::Plaintext(seal::util::uint_to_hex_string(&least, std::size_t(1))));
+		result.push_back(seal::Plaintext(seal::util::uint_to_hex_string(&middle, std::size_t(1))));
+		result.push_back(seal::Plaintext(seal::util::uint_to_hex_string(&upper, std::size_t(1))));
 	}
+
+	return result;
+}
+
+void ptv_to_lwect(std::vector<seal::Plaintext> ptv, LWECT lwe_ct) {
+	// Read ct0 from plaintext vector
+	uint64_t least, middle, upper{};
+	least = *ptv[0].data();
+	middle = *ptv[1].data();
+	upper = *ptv[2].data();
+	lwe_ct.set_ct0((upper << 40) + (middle << 20) + least);
+
+	// Read ct1 from plaintext vector
+	seal::Plaintext pt(ptv.size() / 3 - 1);
+	for (int i = 3; i < ptv.size(); i += 3) {
+		least = *ptv[i].data();
+		middle = *ptv[i + 1].data();
+		upper = *ptv[i + 2].data();
+		*(pt.data() + (i / 3 - 1)) = (upper << 40) + (middle << 20) + least;
+	}
+	lwe_ct.set_ct1(pt);
+}

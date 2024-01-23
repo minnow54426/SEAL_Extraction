@@ -20,12 +20,25 @@ public:
     // coeff_index represents the index to be extracted
     LWECT(const seal::Ciphertext& RLWECT, const std::size_t coeff_index,
 	const seal::SEALContext& context);
+	LWECT(const std::size_t poly_modulus_degree) {
+		ct0 = 0;
+		ct1 = seal::Plaintext(poly_modulus_degree);
+	}
+	// Transform LWE ciphertext to plaintext of BFV
+	// 1. Slice 2. Transform every part to pt
+	std::vector<seal::Plaintext> to_pt();
     // Some useful help functions
 	inline const std::size_t poly_modulus_degree() const { return poly_modulus_degree_; };
 	inline seal::parms_id_type parms_id() const { return ct1.parms_id(); };
 	inline const double scale() { return ct1.scale(); };
 	inline const uint64_t get_ct0() const { return ct0; };
 	inline const seal::Plaintext get_ct1() const { return ct1; };
+	inline void set_ct0(uint64_t  value) { ct0 = value; };
+	inline void set_ct1(seal::Plaintext pt) {
+		for (int i = 0; i < ct1.coeff_count(); i++) {
+			*(ct1.data() + 1) = *(pt.data() + i);
+		}
+	};
 };
 
 class lweSecretKey {
@@ -53,5 +66,7 @@ public:
 
 	uint64_t DoDecrypt(const LWECT& ct);
 };
+
+void ptv_to_lwect(std::vector<seal::Plaintext> ptv, LWECT lwe_ct);
 
 #endif
