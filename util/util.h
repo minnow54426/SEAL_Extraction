@@ -69,4 +69,7 @@ public:
 
 void ptv_to_lwect(std::vector<seal::Plaintext> ptv, LWECT lwe_ct);
 
+std::vector<seal::Plaintext> lwe_ctv_to_ptv(std::vector<LWECT> lwe_ctv);
+void ptv_to_lwe_ctv(std::vector<seal::Plaintext> ptv, std::vector<LWECT> lwe_ctv);
+
 #endif

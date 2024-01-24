@@ -4,7 +4,7 @@
 
 
 
-void test_tranfrom_between_lwect_ptv() {
+void test_tranfrom_between_lwectv_ptv() {
     std::size_t index = 5;
     std::size_t value = 6;
 
@@ -37,26 +37,27 @@ void test_tranfrom_between_lwect_ptv() {
     seal::Ciphertext ct;
     encryptor.encrypt(pt, ct);
 
-
     // Extract
     LWECT lwe_ct = LWECT(ct, index, context); 
+    LWECT lwe_ct1 = LWECT(ct, index,  context);
+    std::vector<LWECT> lwe_ctv = {lwe_ct, lwe_ct1};
 
     // Transform lwect to plaintext vector
-
-    std::vector<seal::Plaintext> ptv = lwe_ct.to_pt();
-
+    std::vector<seal::Plaintext> ptv = lwe_ctv_to_ptv(lwe_ctv);
 
     // Transform back
-    ptv_to_lwect(ptv, lwe_ct);
+    ptv_to_lwe_ctv(ptv, lwe_ctv);
 
     // Decrypt
     lweSecretKey lwe_sk = lweSecretKey(secret_key, context);
     lweDecryptor lwe_decryptor = lweDecryptor(lwe_sk, context, parms);
-    uint64_t result = lwe_decryptor.DoDecrypt(lwe_ct);
+    uint64_t result = lwe_decryptor.DoDecrypt(lwe_ctv[0]);
+    uint64_t result1 = lwe_decryptor.DoDecrypt(lwe_ctv[1]);
 
     std::cout << value << std::endl;
 
     std::cout << result << std::endl;
+    std::cout << result1 << std::endl;
 }
 
 int main() {
@@ -67,6 +68,6 @@ int main() {
     // The second parameter is length of database
     // PIRExample(5, 100);
 
-    test_tranfrom_between_lwect_ptv();
+    test_tranfrom_between_lwectv_ptv();
     return 0;
 }

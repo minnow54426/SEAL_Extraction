@@ -65,8 +65,6 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 
 	std::shared_ptr<const seal::SEALContext::ContextData> context_data = context_.get_context_data(ct.parms_id());
 	const seal::Modulus& modulus = context_data->parms().coeff_modulus()[0];
-
-	std::cout << "point0" << std::endl;
 		
 	// Calculate c0 + c1 * s
     // If modulus switch is applied, only one modulu is left
@@ -75,8 +73,6 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 	const uint64_t* op0 = sk_.get_sk().data().data();
 	const uint64_t* op1 = ct.get_ct1().data();
 
-	std::cout << "point1" << std::endl;
-
 	seal::Modulus plain_modulus = encryption_parms_.plain_modulus(); // t
 	seal::Modulus last_modulus = encryption_parms_.coeff_modulus()[0]; // Q
 
@@ -84,8 +80,6 @@ uint64_t lweDecryptor::DoDecrypt(const LWECT& ct) {
 		modTemp = seal::util::multiply_uint_mod(*(op0 + i), *(op1 + i), modulus);
 		result = seal::util::add_uint_mod(result, modTemp, modulus);
 	}
-
-	std::cout << "point2" << std::endl;
 
 	// If fastPIR parameters is used, don't use this line, although it's faster
 	// than above loop
@@ -153,4 +147,78 @@ void ptv_to_lwect(std::vector<seal::Plaintext> ptv, LWECT lwe_ct) {
 		*(pt.data() + (i / 3 - 1)) = (upper << 40) + (middle << 20) + least;
 	}
 	lwe_ct.set_ct1(pt);
+}
+
+std::vector<seal::Plaintext> lwe_ctv_to_ptv(std::vector<LWECT> lwe_ctv) {
+	// Firstly, transform lwe_ctv into a 2 dimensional vector, 
+	// where each element is a 20 bits num
+	std::vector<std::vector<uint64_t>> lwe_ctv_decompose(lwe_ctv.size());
+	uint64_t least, middle, upper{};
+	for (int i = 0; i < lwe_ctv.size(); i ++) {
+		for (int j = 0; j < lwe_ctv[0].get_ct1().coeff_count(); j++) {	
+			uint64_t tmp = *(lwe_ctv[i].get_ct1().data() + j);
+			least = tmp & 0xfffff;
+			middle = (tmp >> 20) & 0xfffff;
+			upper = (tmp >> 40) & 0xfffff;
+			lwe_ctv_decompose[i].push_back(least);
+			lwe_ctv_decompose[i].push_back(middle);
+			lwe_ctv_decompose[i].push_back(upper);
+		}
+	}
+	// Determine how many columns can be stored in a single plaintext
+	std::size_t poly_length = lwe_ctv[0].get_ct1().coeff_count();
+	std::size_t num = poly_length / lwe_ctv.size();
+	// Determine the number of plaintext we need
+	std::size_t pt_num = (3 * (poly_length + 1) / num) + 1;
+	// Create the result container
+	std::vector<std::vector<uint64_t>> result = std::vector(pt_num, std::vector<uint64_t>(poly_length));
+	for (int i = 0; i < 3 * (poly_length + 1); i++) {
+		// Determine the index of plaintext
+		std::size_t pt_index = i / num;
+		for (int j = 0; j < lwe_ctv.size(); j++) {
+			result[pt_index].push_back(lwe_ctv_decompose[j][i]);
+		}
+	}
+	// Transform the result container into plaintext vector
+	std::vector<seal::Plaintext> ptv;
+	for (int i = 0; i < pt_num; i++) {
+		seal::Plaintext tmp(poly_length);
+		for (int j = 0; j < poly_length; j++) {
+			*(tmp.data() + j) = result[i][j];
+		}
+		ptv.push_back(tmp);
+	}
+	return ptv;
+}
+
+void ptv_to_lwe_ctv(std::vector<seal::Plaintext> ptv, std::vector<LWECT> lwe_ctv) {
+	// Read the data from ptv to vector
+	std::vector<std::vector<uint64_t>> ptv_data = std::vector(ptv.size(), std::vector<uint64_t>(ptv[0].coeff_count()));
+	for (int i = 0; i < ptv.size(); i++) {
+		for (int j = 0; j < ptv[0].coeff_count(); j++) {
+			ptv_data[i][j] = *(ptv[i].data() + j);
+		}
+	}
+	// Compose ptv_data according to the rule which we decompose a 60 bits number to 3 20 bits number
+	std::size_t lwe_ct_num = lwe_ctv.size();
+	std::vector<std::vector<uint64_t>> lwe_ctv_data = std::vector(lwe_ct_num, std::vector<uint64_t>(3 * (1 + ptv[0].coeff_count())));
+	std::size_t num = ptv[0].coeff_count() / lwe_ct_num; // The number of column in each plaintext
+	for (int i = 0; i < lwe_ct_num; i++) {
+		for (int j = 0; j < 3 * (1 + ptv[0].coeff_count()); j++) {
+			std::size_t total_index = j * lwe_ct_num + i;
+			std::size_t num_per_pt = (ptv[0].coeff_count() / lwe_ct_num) * lwe_ct_num;
+			std::size_t pt_index = total_index / num_per_pt;
+			std::size_t index = total_index - pt_index * num_per_pt;
+			lwe_ctv_data[i][j] = ptv_data[pt_index][index];
+		}
+	}
+	// Transform lwe_ctv_data to vector of lwe_ct
+	for (int i = 0; i < lwe_ct_num; i++) {
+		lwe_ctv[i].set_ct0((lwe_ctv_data[i][2] >> 40) + (lwe_ctv_data[i][1] >> 20) + lwe_ctv_data[i][0]);
+		seal::Plaintext tmp(ptv[0].coeff_count());
+		for (int j = 0; j < ptv[0].coeff_count(); j++) {
+			*(tmp.data() + j) = lwe_ctv_data[i][3 * (j + 1)] + (lwe_ctv_data[i][3 * (j + 1) + 1] >> 20) + (lwe_ctv_data[i][3 * (j + 1) + 2] >> 40);
+		}
+		lwe_ctv[i].set_ct1(tmp);
+	}
 }
